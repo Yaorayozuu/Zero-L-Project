@@ -1,6 +1,6 @@
-import { initDb, createUser, getUser, addGeneration, getDailyCount, incrementUsage, getFreePool, consumePool, getUserHistory, getPoolStats } from './lib/db.js';
-import { getSession } from './lib/auth.js';
-import { hashPassword, verifyPassword, PLAN_LABELS, PLAN_QUALITY, DAILY_LIMIT } from './lib/helpers.js';
+import { initDb, createUser, getUser, addGeneration, getDailyCount, incrementUsage, getFreePool, consumePool, getUserHistory, getPoolStats } from '../../../../lib/db.js';
+import { getSession } from '../../../../lib/auth.js';
+import { hashPassword, verifyPassword, PLAN_LABELS, PLAN_QUALITY, DAILY_LIMIT } from '../../../../lib/helpers.js';
 import { NextResponse } from 'next/server';
 import QRCode from 'qrcode';
 

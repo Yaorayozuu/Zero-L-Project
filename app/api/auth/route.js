@@ -1,7 +1,8 @@
-import { initDb, getUser } from './lib/db.js';
-import { signToken } from './lib/auth.js';
-import { verifyPassword } from './lib/helpers.js';
+import { initDb, getUser } from '../../../../lib/db.js';
+import { signToken, getSession } from '../../../../lib/auth.js';
+import { verifyPassword } from '../../../../lib/helpers.js';
 import { NextResponse } from 'next/server';
+import { cookies } from 'next/headers';
 
 export const POST = async (req) => {
   try {
@@ -28,9 +29,8 @@ export const POST = async (req) => {
   return response;
 };
 
-export const GET = async (req) => {
-  const { cookies } = req;
-  const session = await getSession(cookies);
+export const GET = async () => {
+  const session = await getSession(cookies());
   return NextResponse.json({ ok: true, user: session || null });
 };
 

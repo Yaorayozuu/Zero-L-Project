@@ -1,7 +1,8 @@
-import { initDb, getUser, addGeneration, getDailyCount, incrementUsage, getFreePool, consumePool, getUserHistory, logWorkerRun } from './lib/db.js';
-import { getSession } from './lib/auth.js';
-import { PLAN_LABELS, PLAN_QUALITY, DAILY_LIMIT } from './lib/helpers.js';
+import { initDb, getUser, addGeneration, getDailyCount, incrementUsage, getFreePool, consumePool, getUserHistory, logWorkerRun } from '../../../../lib/db.js';
+import { getSession } from '../../../../lib/auth.js';
+import { PLAN_LABELS, PLAN_QUALITY, DAILY_LIMIT } from '../../../../lib/helpers.js';
 import { NextResponse } from 'next/server';
+import { cookies } from 'next/headers';
 import QRCode from 'qrcode';
 
 // Generate QR data URI
@@ -33,7 +34,7 @@ export const POST = async (req) => {
     return NextResponse.json({ ok: false, error: 'Database unavailable.' }, { status: 503 });
   }
 
-  const session = await getSession(req.cookies);
+  const session = await getSession(cookies());
   if (!session?.userId) {
     return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 });
   }
