@@ -1,6 +1,6 @@
-import { initDb, getUser, addGeneration, getDailyCount, incrementUsage, getFreePool, consumePool, getUserHistory, logWorkerRun } from '../../../../lib/db.js';
-import { getSession } from '../../../../lib/auth.js';
-import { PLAN_LABELS, PLAN_QUALITY, DAILY_LIMIT } from '../../../../lib/helpers.js';
+import { initDb, getUser, addGeneration, getDailyCount, incrementUsage, getFreePool, consumePool, getUserHistory, logWorkerRun } from '@/lib/db.js';
+import { getSession } from '@/lib/auth.js';
+import { PLAN_LABELS, PLAN_QUALITY, DAILY_LIMIT } from '@/lib/helpers.js';
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import QRCode from 'qrcode';
@@ -24,6 +24,23 @@ const triggerWorker = async (plan) => {
     return { triggered: res.ok, data };
   } catch (err) {
     return { triggered: false, reason: 'unreachable', error: err.message };
+  }
+};
+
+// Ambil link dari memory pool worker (fallback kalau DB insert worker gagal)
+const fetchWorkerPool = async (plan) => {
+  const workerUrl = process.env.WORKER_URL;
+  if (!workerUrl) return null;
+  try {
+    const res = await fetch(`${workerUrl}/pool?plan=${plan}`, {
+      headers: { 'Authorization': `Bearer ${process.env.WORKER_TOKEN || ''}` },
+    });
+    if (!res.ok) return null;
+    const data = await res.json().catch(() => ({}));
+    const first = (data.items || [])[0];
+    return first?.link || null;
+  } catch {
+    return null;
   }
 };
 
@@ -64,7 +81,12 @@ export const POST = async (req) => {
     source = 'worker';
   }
 
-  // 4. Fallback: pool kosong / worker gagal -> ambil stok user lain (zero-fail guarantee)
+  // 4. Fallback: pool DB kosong -> coba memory pool worker -> stok user lain (zero-fail)
+  if (!link) {
+    link = await fetchWorkerPool(safePlan);
+    if (link) source = 'worker-mem';
+  }
+
   if (!link) {
     const fallback = await getUserHistory(session.userId, 100);
     const stillGood = fallback.find((g) => !g.consumed && g.source === 'worker');

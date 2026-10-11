@@ -1,6 +1,6 @@
-import { initDb, getUser } from '../../../../lib/db.js';
-import { signToken, getSession } from '../../../../lib/auth.js';
-import { verifyPassword } from '../../../../lib/helpers.js';
+import { initDb, getUser } from '@/lib/db.js';
+import { signToken, getSession } from '@/lib/auth.js';
+import { verifyPassword } from '@/lib/helpers.js';
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 

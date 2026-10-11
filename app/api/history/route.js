@@ -1,5 +1,5 @@
-import { initDb, getUserHistory, getPoolStats } from '../../../../lib/db.js';
-import { getSession } from '../../../../lib/auth.js';
+import { initDb, getUserHistory, getPoolStats } from '@/lib/db.js';
+import { getSession } from '@/lib/auth.js';
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 
