@@ -1,61 +1,51 @@
-# Status Koneksi Aroshi — Netflix QR Web
+# Status — Netflix QR Web (mode KODE AKSES)
 
-Update terakhir: sudah **terconnect end-to-end** (web → worker → Aroshi).
+Update: **login/DB dibuang, diganti kode akses. Live & teruji.**
 
 ## Yang udah beres ✅
 
-| Bagian | Status | Catatan |
-|---|---|---|
-| Git repo | ✅ connected | `origin https://github.com/Yaorayozuu/Zero-L-Project.git` (branch `main`) |
-| Worker → Aroshi | ✅ TERUJI | Generate basic & medium dapet link Netflix asli + QR |
-| Web → Worker | ✅ | `/api/generate` trigger worker + fallback `/pool` |
-| Auth (login/JWT) | ✅ TERUJI | bcrypt hash + jose JWT verified |
-| DB layer (`lib/db.js`) | ✅ fixed | query parameterized (`$1`,`$2`), sebelumnya broken |
-| Worker anti-crash | ✅ | DB/browser error gak matiin proses; link masuk memory pool |
+| Bagian | Status |
+|---|---|
+| Deploy Vercel | ✅ READY — https://netflix-qr-web.vercel.app |
+| Kode akses (ACCESS_CODES) | ✅ teruji: kode salah 401, kode benar 200 |
+| Sesi cookie JWT | ✅ teruji |
+| Guard generate | ✅ tanpa kode akses = 401 |
+| GitHub | ✅ push `8dad72f` |
 
-Bukti test (worker log):
+## Kode akses aktif
+
+Baca dari env Vercel `ACCESS_CODES`. Sekarang ada 3:
+- `NQR-7K2P`
+- `NQR-9XQ4`
+- `NQR-3MZ8`
+
+Ganti/tambah kode: Vercel → Project → Settings → Environment Variables → `ACCESS_CODES` (pisah koma), lalu redeploy.
+
+## Yang masih tersisa ⏳
+
+### Worker (WAJIB biar generate jalan)
+Web sekarang minta link ke worker (`WORKER_URL`). Selama worker belum jalan, generate = 503.
+
+1. Jalanin worker di Termux/VPS: `node worker.js`
+2. Set env Vercel:
+   ```
+   WORKER_URL   = https://<url-worker-lo>   (atau http://IP:3001)
+   WORKER_TOKEN = <samain dengan worker>
+   ```
+3. Redeploy.
+
+Catatan: Vercel (serverless) gak bisa nge-host worker karena butuh Chromium.
+
+## Env Vercel yg udah di-set
+
 ```
-Stock: { basic: '22', standard: '56', premium: '9' }
-Generated: basic  -> https://netflix.com/?nftoken=BgjCwOvc...
-Generated: medium -> https://netflix.com/?nftoken=BgjCwOvc...
-```
-
-## Yang lo perlu lakuin (butuh kredensial lo) ⏳
-
-### 1. Push ke GitHub
-Commit udah lokal, tinggal push (butuh token/SSH lo):
-```bash
-cd .zeline/netflix-qr-web && git push origin main
-```
-
-### 2. Login Vercel + deploy
-```bash
-cd .zeline/netflix-qr-web
-vercel login        # approve di browser
-vercel --prod
-```
-
-### 3. Set Env di Vercel (Project Settings → Environment Variables)
-```
-POSTGRES_URL  = <dari Vercel Postgres / Storage>   # WAJIB
-JWT_SECRET    = <random min 32 char>               # WAJIB
-WORKER_URL    = https://<worker-lo>/               # buat generate fresh
-WORKER_TOKEN  = <samain dengan worker>
-```
-
-### 4. Deploy Worker (di VPS/server, BUKAN Vercel)
-Worker butuh Chromium → gak bisa di Vercel serverless. Set env & jalankan `node worker.js`.
-Di Termux: `CHROME_BIN=/data/data/com.termux/files/usr/lib/chromium/chrome`.
-
-### 5. Seed user admin
-```bash
-curl -X POST https://<app>.vercel.app/api/signup \
-  -H "Content-Type: application/json" \
-  -d '{"username":"admin","password":"<strong-pass>"}'
+ACCESS_CODES = "NQR-7K2P,NQR-9XQ4,NQR-3MZ8"
+JWT_SECRET   = <random 64 hex>   (encrypted)
 ```
 
-## Catatan penting
+## Perubahan desain
 
-- **Local build Next di Termux GAK bisa** (Next 14 gak punya SWC binary android-arm64). Ini normal — build & deploy harus di Vercel/Linux.
-- Worker saat ini jalan di Termux pakai `puppeteer-core` + Chromium Termux (sudah terbukti generate sukses).
-- Aroshi punya limit per IP; `CONCURRENCY` worker jangan > 2.
+- **Tidak ada DB, tidak ada signup, tidak ada riwayat.** User cuma masukin kode akses.
+- **Tanpa limit** generate (Aroshi yang jaga stok per IP).
+- Link generate **gak kesimpen** — user harus salin/download sebelum refresh.
+- Endpoint: `/api/auth` (masuk/keluar), `/api/generate` (QR), `/api/health`.
