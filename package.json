@@ -6,19 +6,13 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start",
-    "lint": "next lint"
+    "start": "next start"
   },
   "dependencies": {
-    "@vercel/postgres": "^0.10.0",
-    "bcryptjs": "^2.4.3",
     "jose": "^5.9.6",
     "next": "14.2.18",
     "qrcode": "^1.5.4",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
-  },
-  "devDependencies": {
-    "babel-plugin-transform-remove-console": "^6.9.4"
   }
 }

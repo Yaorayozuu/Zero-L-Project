@@ -1,39 +1,40 @@
-import { initDb, getUser, addGeneration, getDailyCount, incrementUsage, getFreePool, consumePool, getUserHistory, logWorkerRun } from '@/lib/db.js';
-import { getSession } from '@/lib/auth.js';
-import { PLAN_LABELS, PLAN_QUALITY, DAILY_LIMIT } from '@/lib/helpers.js';
+import { getSession } from '@/lib/access.js';
+import { PLAN_LABELS, PLAN_QUALITY } from '@/lib/helpers.js';
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import QRCode from 'qrcode';
 
-// Generate QR data URI
 const qrToDataUrl = async (text) => {
   return QRCode.toDataURL(text, { width: 300, margin: 1, errorCorrectionLevel: 'M' });
 };
 
-// Hit worker (worker URL dari env) buat trigger generate fresh ke pool
+// Minta worker generate link fresh buat plan ini.
 const triggerWorker = async (plan) => {
   const workerUrl = process.env.WORKER_URL;
-  if (!workerUrl) return { triggered: false, reason: 'no_worker_url' };
+  if (!workerUrl) return { ok: false, reason: 'no_worker_url' };
   try {
-    const res = await fetch(workerUrl + '/generate', {
+    const res = await fetch(workerUrl.replace(/\/$/, '') + '/generate', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${process.env.WORKER_TOKEN || ''}` },
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${process.env.WORKER_TOKEN || ''}`,
+      },
       body: JSON.stringify({ plan }),
     });
     const data = await res.json().catch(() => ({}));
-    return { triggered: res.ok, data };
+    return { ok: res.ok, data };
   } catch (err) {
-    return { triggered: false, reason: 'unreachable', error: err.message };
+    return { ok: false, reason: 'unreachable', error: err.message };
   }
 };
 
-// Ambil link dari memory pool worker (fallback kalau DB insert worker gagal)
+// Ambil link dari memory pool worker (endpoint /pool).
 const fetchWorkerPool = async (plan) => {
   const workerUrl = process.env.WORKER_URL;
   if (!workerUrl) return null;
   try {
-    const res = await fetch(`${workerUrl}/pool?plan=${plan}`, {
-      headers: { 'Authorization': `Bearer ${process.env.WORKER_TOKEN || ''}` },
+    const res = await fetch(`${workerUrl.replace(/\/$/, '')}/pool?plan=${plan}`, {
+      headers: { Authorization: `Bearer ${process.env.WORKER_TOKEN || ''}` },
     });
     if (!res.ok) return null;
     const data = await res.json().catch(() => ({}));
@@ -45,73 +46,39 @@ const fetchWorkerPool = async (plan) => {
 };
 
 export const POST = async (req) => {
-  try {
-    await initDb();
-  } catch (err) {
-    return NextResponse.json({ ok: false, error: 'Database unavailable.' }, { status: 503 });
-  }
-
   const session = await getSession(cookies());
-  if (!session?.userId) {
-    return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 });
+  if (!session?.code) {
+    return NextResponse.json({ ok: false, error: 'Belum masuk. Masukin kode akses dulu.' }, { status: 401 });
   }
 
-  const { plan } = await req.json();
+  const { plan } = await req.json().catch(() => ({}));
   const safePlan = ['basic', 'medium', 'premium'].includes(plan) ? plan : 'basic';
-  const today = new Date().toISOString().slice(0, 10);
 
-  // 1. Cek limit harian
-  const used = await getDailyCount(session.userId, today);
-  if (used >= DAILY_LIMIT) {
-    return NextResponse.json({ ok: false, error: `Limit harian habis (${DAILY_LIMIT}x/hari). Reset besok.` });
-  }
+  // 1. Coba ambil dari pool worker dulu (biasanya masih ada stok fresh).
+  let link = await fetchWorkerPool(safePlan);
+  let source = link ? 'pool' : null;
 
-  // 2. Trigger worker generate fresh (background, jangan nunggu)
-  triggerWorker(safePlan).catch(console.error);
-
-  // 3. Ambil dari pool (fresh dulu)
-  const [poolRows] = await getFreePool(safePlan, 5);
-  let link = null;
-  let source = 'fresh';
-
-  if (poolRows && poolRows.length > 0) {
-    const pick = poolRows[0];
-    link = pick.netflix_link;
-    await consumePool(pick.id);
-    source = 'worker';
-  }
-
-  // 4. Fallback: pool DB kosong -> coba memory pool worker -> stok user lain (zero-fail)
+  // 2. Pool kosong? Minta worker generate baru, tunggu hasilnya.
   if (!link) {
-    link = await fetchWorkerPool(safePlan);
-    if (link) source = 'worker-mem';
-  }
-
-  if (!link) {
-    const fallback = await getUserHistory(session.userId, 100);
-    const stillGood = fallback.find((g) => !g.consumed && g.source === 'worker');
-    if (stillGood) {
-      link = stillGood.netflix_link;
-      source = 'shared';
+    const gen = await triggerWorker(safePlan);
+    const fromGen = gen?.data?.link || gen?.data?.url;
+    if (fromGen) {
+      link = fromGen;
+      source = 'fresh';
+    }
+    // Kadang /generate nyimpen ke pool duluan, ambil sekali lagi.
+    if (!link) {
+      link = await fetchWorkerPool(safePlan);
+      if (link) source = 'pool';
     }
   }
 
-  // 5. Masih gak dapet? Error, tapi increment usage tetep gak dilakukan biar gak nge-gas limit.
   if (!link) {
-    await logWorkerRun({ plan: safePlan, status: 'failed_no_pool', error: 'No available link in pool and no fallback.' });
-    return NextResponse.json({ ok: false, error: 'Stok kosong. Coba lagi nanti atau hubungi admin.' }, { status: 503 });
+    return NextResponse.json(
+      { ok: false, error: 'Stok kosong / worker belum siap. Coba lagi sebentar.' },
+      { status: 503 }
+    );
   }
-
-  // 6. Catet usage + history user ini
-  await incrementUsage(session.userId, today);
-  await addGeneration({
-    userId: session.userId,
-    plan: safePlan,
-    netflixLink: link,
-    quality: PLAN_QUALITY[safePlan],
-    country: null,
-    source,
-  });
 
   const qr = await qrToDataUrl(link);
   return NextResponse.json({
@@ -121,6 +88,5 @@ export const POST = async (req) => {
     link,
     qr,
     source,
-    remaining: DAILY_LIMIT - used - 1,
   });
 };
